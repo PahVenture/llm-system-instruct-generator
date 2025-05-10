@@ -1,0 +1,7 @@
+{{SYSTEM_PROMPT}}
+
+Create at {{DATE}}
+
+{{ALL_FILES}}
+
+{{SYSTEM_PROMPT}} 

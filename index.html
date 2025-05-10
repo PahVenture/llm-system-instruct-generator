@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MD File Merger</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Markdown File Merger</h1>
+
+        <label for="folderInput">1. Select a Folder:</label>
+        <input type="file" id="folderInput" webkitdirectory directory multiple>
+
+        <div class="template-variables">
+            <h2>2. Template Variables:</h2>
+            <div id="defaultVariables">
+                <div class="variable-row">
+                    <label for="systemPrompt">SYSTEM_PROMPT:</label>
+                    <textarea id="systemPrompt" placeholder="Enter system prompt here..."></textarea>
+                </div>
+            </div>
+            <div id="customVariables"></div>
+            <button id="addVariableButton">+ Add Custom Variable</button>
+        </div>
+
+        <button id="processButton" disabled>3. Process Files & Generate MD</button>
+
+        <div id="status">Select a folder to begin.</div>
+
+        <h2>Preview:</h2>
+        <textarea id="mdPreview" readonly placeholder="Markdown content will appear here..."></textarea>
+
+        <button id="downloadButton" disabled>4. Download Merged MD File</button>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
