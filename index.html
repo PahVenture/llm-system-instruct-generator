@@ -4,37 +4,61 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MD File Merger</title>
-    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body>
-    <div class="container">
-        <h1>Markdown File Merger</h1>
+<body class="bg-gray-100 text-gray-800 font-sans p-4 md:p-8">
+    <div class="container bg-white p-6 md:p-8 rounded-lg shadow-xl max-w-4xl mx-auto">
+        <h1 class="text-3xl font-bold mb-6 text-center text-blue-600">Markdown File Merger</h1>
 
-        <label for="folderInput">1. Select a Folder:</label>
-        <input type="file" id="folderInput" webkitdirectory directory multiple>
+        <div class="mb-6">
+            <label class="block text-lg font-medium mb-2">1. Open a Folder:</label>
+            <button id="openFolderButton" class="bg-indigo-500 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded">Open Folder</button>
+            <p id="currentFolderPath" class="text-sm text-gray-600 mt-2 inline-block"></p>
+            <button id="closeFolderButton" class="bg-red-500 hover:bg-red-700 text-white font-bold py-1 px-3 rounded text-xs ml-3 hidden align-middle">Close Folder</button>
+            <input type="file" id="folderInput" webkitdirectory directory multiple class="hidden">
+        </div>
 
-        <div class="template-variables">
-            <h2>2. Template Variables:</h2>
+        <div id="fileExplorerSection" class="mb-6 hidden">
+            <h2 class="text-xl font-semibold mb-2 text-gray-700">Select Files to Merge:</h2>
+            <div id="fileExplorerTree" class="border border-gray-300 p-3 rounded-md h-64 overflow-y-auto bg-gray-50">
+                <!-- File tree will be populated here -->
+            </div>
+        </div>
+
+        <div class="template-variables bg-gray-50 p-5 rounded-md border border-gray-200 mb-6">
+            <h2 class="text-xl font-semibold mb-4 text-gray-700">2. Template Variables:</h2>
             <div id="defaultVariables">
-                <div class="variable-row">
-                    <label for="systemPrompt">SYSTEM_PROMPT:</label>
-                    <textarea id="systemPrompt" placeholder="Enter system prompt here..."></textarea>
+                <div class="variable-row flex items-start mb-4">
+                    <label for="systemPrompt" class="block w-36 pt-2 font-medium">SYSTEM_PROMPT:</label>
+                    <textarea id="systemPrompt" placeholder="Enter system prompt here..." class="flex-grow p-3 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 font-mono text-sm h-32 resize-y"></textarea>
                 </div>
             </div>
             <div id="customVariables"></div>
-            <button id="addVariableButton">+ Add Custom Variable</button>
+            <button id="addVariableButton" class="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded mt-3">+ Add Custom Variable</button>
         </div>
 
-        <button id="processButton" disabled>3. Process Files & Generate MD</button>
+        <div class="template-editor mt-6 mb-6">
+            <h2 class="text-xl font-semibold mb-2 text-gray-700">2.5. Edit Merge Template:</h2>
+            <textarea id="mergeTemplate" class="w-full p-3 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 font-mono text-sm h-64" placeholder="Markdown template content..."></textarea>
+        </div>
 
-        <div id="status">Select a folder to begin.</div>
+        <button id="processButton" disabled class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded disabled:bg-gray-400 disabled:cursor-not-allowed mb-6 w-full md:w-auto">3. Process Files & Generate MD</button>
 
-        <h2>Preview:</h2>
-        <textarea id="mdPreview" readonly placeholder="Markdown content will appear here..."></textarea>
-
-        <button id="downloadButton" disabled>4. Download Merged MD File</button>
+        <div id="status" class="p-4 my-4 bg-blue-50 text-blue-700 rounded-md text-center font-medium">Select a folder to begin.</div>
+        
+        <!-- Notification area for completion messages -->
+        <div id="notification" class="hidden p-4 my-4 bg-green-100 text-green-700 rounded-md text-center font-medium border border-green-300">
+            <svg class="inline-block w-5 h-5 mr-2 -mt-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+            </svg>
+            <span id="notificationMessage">Process completed successfully!</span>
+        </div>
+        
+        <!-- Hidden textarea for internal use -->
+        <textarea id="mdPreview" class="hidden"></textarea>
     </div>
 
-    <script src="app.js"></script>
+    <script type="module" src="dbManager.js"></script>
+    <script src="app.js" type="module"></script>
 </body>
 </html>

@@ -1,0 +1,65 @@
+# .llmignore file
+# Similar to .gitignore, this file specifies patterns for files that should be ignored
+# when generating content for large language models
+
+# Common large files that aren't useful for LLMs
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.ico
+*.svg
+*.webp
+*.pdf
+*.zip
+*.gz
+*.tar
+*.rar
+*.mp3
+*.mp4
+*.avi
+*.mov
+*.wav
+*.bin
+*.dat
+*.db
+*.sqlite
+*.sqlite3
+
+# Binary and compiled files
+*.pyc
+*.pyo
+*.pyd
+*.o
+*.obj
+*.exe
+*.dll
+*.so
+*.dylib
+*.class
+
+# LLM-specific patterns
+**/node_modules/
+**/dist/
+**/build/
+**/.cache/
+**/tmp/
+
+# Large dataset files that might contain sensitive information
+*.csv
+*.json
+*.ndjson
+*.jsonl
+
+# Log files
+*.log
+**/logs/
+
+# Temporary or cache files
+**/.DS_Store
+**/Thumbs.db
+
+# Add your own patterns below
+# For example:
+# secret_configs/
+# user_data/ 

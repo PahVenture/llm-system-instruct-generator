@@ -1,7 +1,5 @@
 {{SYSTEM_PROMPT}}
 
-Create at {{DATE}}
-
+<|CODE|>
 {{ALL_FILES}}
-
-{{SYSTEM_PROMPT}} 
+<|CODE|>

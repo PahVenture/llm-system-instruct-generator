@@ -12,30 +12,40 @@ function parseGitignore(content) {
         .filter(line => line && !line.startsWith('#') && line !== '');
 }
 
-// Function to test if a path matches a gitignore pattern
-function matchesGitignorePattern(path, pattern) {
+// Function to parse any ignore file content into an array of patterns
+function parseIgnoreFile(content) {
+    if (!content) return [];
+    
+    return content
+        .split('\n')
+        .map(line => line.trim())
+        .filter(line => line && !line.startsWith('#') && line !== '');
+}
+
+// Function to test if a path matches an ignore pattern
+function matchesIgnorePattern(path, pattern) {
     // Convert gitignore glob pattern to JavaScript RegExp
+    // 1. Escape regex-special chars EXCEPT gitignore glob chars: * ? [ ] /
     let regexPattern = pattern
-        // Escape special regex characters except those used in gitignore patterns
-        .replace(/[.+^${}()|[\]]/g, '\\$&')
+        .replace(/[.+^${}()|\\]/g, "\\$&") // escape . + ^ $ { } ( ) | and backslash but NOT * ? [ ] or /
         // Handle gitignore specific patterns
-        .replace(/\*/g, '.*')  // * matches any string
-        .replace(/\?/g, '.')   // ? matches a single character
-        .replace(/\//g, '\\/'); // / is a directory separator
+        .replace(/\*/g, ".*")  // * matches any string
+        .replace(/\?/g, ".")   // ? matches a single character
+        .replace(/\//g, "\\/"); // / is a directory separator
 
     // Add start/end anchors depending on pattern format
-    if (pattern.startsWith('/')) {
+    if (pattern.startsWith("/")) {
         // Pattern with / at the beginning matches from the root
         regexPattern = `^${regexPattern.substring(1)}`;
-    } else if (pattern.includes('/')) {
-        // Pattern with / inside matches relative to root
+    } else if (pattern.includes("/")) {
+        // Pattern with / inside matches relative to root (any depth)
         regexPattern = `^.*${regexPattern}`;
     } else {
         // Pattern without / matches any file/dir with that name
-        regexPattern = `^.*\\/${regexPattern}$|^${regexPattern}$`;
+        regexPattern = `(^|\\/)${regexPattern}($|\\/)`;
     }
 
-    const regex = new RegExp(regexPattern);
+    const regex = new RegExp(regexPattern, "i"); // case-insensitive to simplify patterns like [Dd]ebug
     return regex.test(path);
 }
 
@@ -49,9 +59,14 @@ function shouldIgnoreFile(path, ignorePatterns) {
         return true;
     }
     
-    // Check against gitignore patterns if any
+    // Always ignore the generated files with the pattern llm-generated-*.md
+    if (/llm-generated-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}\.md$/.test(normalizedPath)) {
+        return true;
+    }
+    
+    // Check against ignore patterns if any
     if (ignorePatterns && ignorePatterns.length > 0) {
-        return ignorePatterns.some(pattern => matchesGitignorePattern(normalizedPath, pattern));
+        return ignorePatterns.some(pattern => matchesIgnorePattern(normalizedPath, pattern));
     }
     
     return false;
@@ -72,8 +87,23 @@ function readFileAsText(file) {
     });
 }
 
-// Default template in case the template file is not provided
-const DEFAULT_TEMPLATE = `# Merged Content from Folder: {{FOLDER_NAME}}
+// Extract folder name from the first file's path
+function extractFolderName(files) {
+    if (!files || files.length === 0) {
+        return 'merged_output';
+    }
+
+    // Try to get the folder name from the first file's relative path
+    const firstFilePath = files[0].webkitRelativePath;
+    if (firstFilePath && firstFilePath.includes('/')) {
+        return firstFilePath.substring(0, firstFilePath.indexOf('/'));
+    }
+    
+    return 'selected_folder_output';
+}
+
+// Default template if none is provided from UI
+const FALLBACK_TEMPLATE = `# Merged Content from Folder: {{FOLDER_NAME}}
 
 {{ALL_FILES}}
 `;
@@ -81,159 +111,127 @@ const DEFAULT_TEMPLATE = `# Merged Content from Folder: {{FOLDER_NAME}}
 // Process the template and replace variables
 function processTemplate(template, variables) {
     let result = template;
-    
-    // Replace all variables in the template
     for (const [key, value] of Object.entries(variables)) {
         const placeholder = new RegExp(`{{${key}}}`, 'g');
-        result = result.replace(placeholder, value);
+        result = result.replace(placeholder, value || ''); // Ensure value is not null/undefined
     }
-    
     return result;
 }
 
+// Generate timestamp for filename
+function getTimestampForFilename() {
+    const now = new Date();
+    return now.toISOString()
+        .replace(/:/g, '-')
+        .replace(/\\..+/, '');
+}
+
+// Function to determine if a file is binary based on MIME type or common extensions
+function isBinaryFile(file) {
+    // If the browser supplies a MIME type and it's not text/* treat as binary
+    if (file.type && !file.type.startsWith('text')) {
+        return true;
+    }
+
+    // Fallback to extension check for when MIME type is missing (e.g. when using webkitRelativePath)
+    const binaryExtensions = [
+        '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.svg', '.webp', '.ico',
+        '.pdf', '.zip', '.gz', '.tar', '.rar', '.7z', '.exe', '.dll', '.so',
+        '.mp3', '.mp4', '.wav', '.ogg', '.webm', '.mov', '.avi', '.bin'
+    ];
+    return binaryExtensions.some(ext => file.name.toLowerCase().endsWith(ext));
+}
+
+// Determine a safe Markdown fence
+function getSafeCodeFence(content) {
+    if (typeof content !== 'string') content = ''; // Ensure content is a string
+    const matches = content.match(/`{3,}/g);
+    const longestFence = matches ? Math.max(...matches.map(m => m.length)) : 0; // Default to 0 if no matches
+    return '`'.repeat(Math.max(3, longestFence + 1)); // Ensure at least ```
+}
+
 // Main function to process files
-async function processFiles(files, folderName, templateVariables = {}) {
+async function processFiles(filesData, templateVariables = {}, mergeTemplate = null) {
     try {
         const startTime = performance.now();
-        self.postMessage({ type: 'status', message: 'Looking for .gitignore file...' });
         
-        // Find and process .gitignore file first if it exists
-        const gitignoreFile = files.find(file => 
-            file.webkitRelativePath.endsWith('/.gitignore') || 
-            file.name === '.gitignore'
-        );
-        
-        let ignorePatterns = [];
-        if (gitignoreFile) {
-            const gitignoreData = await readFileAsText(gitignoreFile);
-            if (!gitignoreData.error) {
-                ignorePatterns = parseGitignore(gitignoreData.content);
-                self.postMessage({ 
-                    type: 'status', 
-                    message: `Found .gitignore with ${ignorePatterns.length} patterns` 
-                });
+        let folderName = "selected_files"; 
+        if (filesData && filesData.length > 0 && filesData[0].relativePath) {
+            const firstPathParts = filesData[0].relativePath.split('/');
+            if (firstPathParts.length > 0 && firstPathParts[0] !== filesData[0].relativePath) { // Check if it's actually a path
+                folderName = firstPathParts[0];
+            } else if (filesData[0].name) { // if relativePath is just the filename
+                 folderName = filesData[0].name.split('.')[0] + "_content";
             }
-        } else {
-            self.postMessage({ type: 'status', message: 'No .gitignore file found, still ignoring .git directories' });
+        } else if (filesData && filesData.length > 0 && filesData[0].name) {
+            folderName = filesData[0].name.split('.')[0] + "_content"; 
         }
 
-        // Process all files (excluding any that match gitignore patterns)
-        self.postMessage({ type: 'status', message: 'Processing files...' });
-        
+        const timestamp = getTimestampForFilename();
+        const outputFilename = `llm-generated-${timestamp}.md`;
+
+        self.postMessage({ type: 'status', message: 'Processing selected files...' });
         let filesContent = '';
-        const filePromises = [];
         
-        let totalFiles = 0;
-        let ignoredFiles = 0;
-        let gitIgnoredFiles = 0;
+        const totalFiles = filesData.length;
+        let processedCount = 0;
 
-        // Look for template file
-        const templateFile = files.find(file => 
-            file.name === 'merged.template.md' || 
-            file.webkitRelativePath.endsWith('/merged.template.md')
-        );
-        
-        let templateContent = DEFAULT_TEMPLATE;
-        if (templateFile) {
-            const templateData = await readFileAsText(templateFile);
-            if (!templateData.error) {
-                templateContent = templateData.content;
-                self.postMessage({ 
-                    type: 'status', 
-                    message: 'Found template file' 
-                });
-            }
-        }
+        self.postMessage({ type: 'progress', processed: 0, total: totalFiles, percent: 0 });
 
-        for (const file of files) {
-            // Skip directories if they appear in the list
-            if (file.size === 0 && !file.type && !file.name.includes('.')) {
-                continue;
-            }
-            
-            // Skip directory entries more robustly
-            if (file.size === 0 && file.type === "") {
-                const isLikelyDir = !file.name.includes('.') || file.webkitRelativePath.endsWith('/');
-                if (isLikelyDir && files.some(f => 
-                    f.webkitRelativePath.startsWith(file.webkitRelativePath) && f !== file)) {
-                    continue;
-                }
-            }
-            
-            // Skip if file matches gitignore pattern or is in .git directory
-            const relativePath = file.webkitRelativePath || file.name;
-            if (shouldIgnoreFile(relativePath, ignorePatterns)) {
-                // Count .git files separately for reporting
-                if (relativePath.includes('/.git/') || relativePath === '.git' || relativePath.startsWith('.git/')) {
-                    gitIgnoredFiles++;
-                } else {
-                    ignoredFiles++;
-                }
-                continue;
-            }
-            
-            // Skip the template file itself
-            if (file === templateFile) {
-                continue;
-            }
+        filesData.sort((a, b) => (a.relativePath || a.name).localeCompare(b.relativePath || b.name));
 
-            totalFiles++;
-            filePromises.push(
-                readFileAsText(file).then(fileData => {
-                    return {
-                        path: relativePath,
-                        content: fileData.content,
-                        error: fileData.error
-                    };
-                })
-            );
-        }
-
-        const results = await Promise.all(filePromises);
-        results.sort((a, b) => a.path.localeCompare(b.path)); // Sort by path for consistent order
-
-        results.forEach(result => {
-            filesContent += `## ${result.path}\n`;
-            if (result.error) {
-                filesContent += `\`\`\`\nError reading file: ${result.error}\n\`\`\`\n\n`;
+        for (const fileDetail of filesData) {
+            const path = fileDetail.relativePath || fileDetail.name;
+            filesContent += `## ${path}\\n\\n`; // Double newline after header
+            if (fileDetail.error) {
+                filesContent += `\`\`\`text\\nError reading file: ${fileDetail.content}\\n\`\`\`\\n\\n`;
             } else {
-                // Handle code blocks in the content
-                let fencedContent = result.content;
-                if (fencedContent.includes('```')) {
-                    console.warn(`File ${result.path} contains '\`\`\`'. Manual adjustment of Markdown might be needed if nesting code blocks.`);
-                }
-                filesContent += `\`\`\`\n${fencedContent}\n\`\`\`\n\n`;
+                const fileActualContent = fileDetail.content || '';
+                const fence = getSafeCodeFence(fileActualContent);
+                filesContent += `${fence}\\n${fileActualContent}\\n${fence}\\n\\n`;
             }
-        });
+            processedCount++;
+            const percent = totalFiles > 0 ? Math.round((processedCount / totalFiles) * 100) : 0;
+            self.postMessage({
+                type: 'progress',
+                processed: processedCount,
+                total: totalFiles,
+                percent: percent
+            });
+        }
+        
+        let templateToUse = mergeTemplate || FALLBACK_TEMPLATE;
 
-        // Prepare variables for template
-        const currentDate = new Date().toLocaleString();
+        const currentDate = new Date();
         const variables = {
-            FOLDER_NAME: folderName,
-            DATE: currentDate,
+            FOLDER_NAME: folderName, 
+            DATE: currentDate.toLocaleDateString(),
+            TIME: currentDate.toLocaleTimeString(),
             ALL_FILES: filesContent,
             ...templateVariables
         };
-        
-        // Process the template with variables
-        const mdContent = processTemplate(templateContent, variables);
+        const mdContent = processTemplate(templateToUse, variables);
 
         const endTime = performance.now();
         const processingTime = ((endTime - startTime) / 1000).toFixed(2);
-        
+
         self.postMessage({ 
             type: 'result', 
             markdown: mdContent, 
+            selectedFolderName: folderName, 
+            outputFilename: outputFilename,
             stats: {
-                processed: results.length,
-                ignored: ignoredFiles,
-                gitIgnored: gitIgnoredFiles,
-                total: totalFiles + ignoredFiles + gitIgnoredFiles,
-                time: processingTime
+                processed: processedCount,
+                ignored: 0, 
+                gitIgnored: 0,
+                generatedIgnored: 0,
+                total: totalFiles, 
+                time: processingTime,
             }
         });
 
     } catch (error) {
+        console.error("Error in worker processFiles:", error);
         self.postMessage({ 
             type: 'error', 
             message: error.message || 'Unknown error during processing' 
@@ -243,14 +241,20 @@ async function processFiles(files, folderName, templateVariables = {}) {
 
 // Listen for messages from the main thread
 self.addEventListener('message', async function(e) {
-    const { files, folderName, templateVariables } = e.data;
+    const { filesData, templateVariables, mergeTemplate } = e.data;
     
-    if (files && files.length > 0) {
-        await processFiles(files, folderName, templateVariables || {});
+    if (filesData) {
+        await processFiles(filesData, templateVariables || {}, mergeTemplate);
     } else {
-        self.postMessage({ 
-            type: 'error', 
-            message: 'No files received by worker' 
-        });
+        self.postMessage({ type: 'error', message: 'No file data received by worker' });
     }
-}); 
+});
+
+// Ensure getSafeCodeFence, processTemplate, FALLBACK_TEMPLATE, getTimestampForFilename are defined in worker context
+// (They seem to be there already based on the provided worker.js or need to be confirmed)
+// Functions like parseIgnoreFile, matchesIgnorePattern, shouldIgnoreFile, readFileAsText, extractFolderName, isBinaryFile are no longer needed here
+// if all filtering and reading happens on main thread.
+
+// Keep utility functions that are still used:
+// processTemplate, getTimestampForFilename, getSafeCodeFence, FALLBACK_TEMPLATE
+ 
