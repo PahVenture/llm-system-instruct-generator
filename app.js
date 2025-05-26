@@ -549,8 +549,12 @@ Create at {{DATE}}
             regex = regex.substring(0, regex.length - 1); // Remove trailing slash for now
         }
 
-        // Escape special regex characters, then convert glob wildcards
-        regex = regex.replace(/[\.\+\(\)\{\}\[\]\^\$\|]/g, '\\$&'); // Escape .,+ etc.
+        // Escape special regex characters, but NOT character class operators like [ ]
+        regex = regex.replace(/[\.\+\(\)\{\}\^\$\|]/g, '\\$&'); // Escape special chars except [ ] for character classes
+        
+        // Store the original pattern before escaping
+        const originalPattern = pattern;
+        
         // Convert ? to [^/]
         regex = regex.replace(/\?/g, '[^/]');
         // Convert **/
@@ -563,9 +567,9 @@ Create at {{DATE}}
         // Handle anchoring and directory matching
         if (regex.startsWith('/')) { // Anchored to root
             regex = '^' + regex.substring(1);
-        } else if (!regex.includes('/')) { // No slashes, match at any level
-            // Example: "*.log" or "build"
-            regex = '(?:^|/)' + regex;
+        } else if (!originalPattern.includes('/')) { // No slashes in original pattern, match at any level
+            // Example: "*.log" or "build" - should match at any level in directory structure
+            regex = '(?:^|.*/|/)' + regex; // Match at root, or after any directory separator
         } else { // Contains slashes, but not at the start: relative to current dir (root for us)
             regex = '^' + regex;
         }
@@ -621,7 +625,7 @@ Create at {{DATE}}
             try {
                 const regexString = gitignorePatternToRegexString(patternString);
                 if (!regexString) continue; // Skip if pattern was just a comment
-                const regex = new RegExp(regexString);
+                const regex = new RegExp(regexString, 'i'); // Case-insensitive to match gitignore behavior
 
                 if (regex.test(relativePath)) {
                     isIgnoredByGitignore = !isNegated; // Last matching rule wins
