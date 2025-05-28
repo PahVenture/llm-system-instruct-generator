@@ -500,10 +500,12 @@ Create at {{DATE}}
         }
     }
 
-    // Helper function to identify binary files by extension
-    function isBinaryFileByExtension(fileName) {
-        if (typeof fileName !== 'string') return false;
-        const lowerFileName = fileName.toLowerCase();
+    // Helper function to identify binary files by extension and path patterns
+    function isBinaryFileByExtension(filePathOrName) {
+        if (typeof filePathOrName !== 'string') return false;
+        const lowerPath = filePathOrName.toLowerCase();
+        
+        // Check for binary file extensions
         const binaryExtensions = [
             // Common image formats
             '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.ico', '.tif', '.tiff',
@@ -521,7 +523,45 @@ Create at {{DATE}}
             '.psd', '.ai', '.eps', '.sqlite', '.db', '.dat', '.bin',
             '.DS_Store' // Explicitly include .DS_Store here as a common unwanted binary file
         ];
-        return binaryExtensions.some(ext => lowerFileName.endsWith(ext));
+        
+        // Check by extension first
+        if (binaryExtensions.some(ext => lowerPath.endsWith(ext))) {
+            return true;
+        }
+        
+        // Check for files in typical binary output directories that might be executables
+        const fileName = lowerPath.split('/').pop() || '';
+        
+        // Check if file is in bin or obj directories first
+        const isInBinaryDir = /\/bin\//i.test(filePathOrName) || /^bin\//i.test(filePathOrName) || 
+                             /\/obj\//i.test(filePathOrName) || /^obj\//i.test(filePathOrName);
+        
+        if (isInBinaryDir) {
+            // In bin/obj directories, only allow files with known text extensions
+            const textExtensions = ['.json', '.xml', '.txt', '.md', '.yml', '.yaml', '.config', 
+                                   '.properties', '.conf', '.ini', '.log', '.pdb', '.sh', '.bat', 
+                                   '.cmd', '.ps1', '.js', '.ts', '.css', '.html', '.htm'];
+            const hasKnownTextExtension = textExtensions.some(ext => lowerPath.endsWith(ext));
+            
+            if (!hasKnownTextExtension) {
+                return true; // Assume binary if in bin/obj and not a known text extension
+            }
+        }
+        
+        // Check for files without typical extensions in other binary output directories
+        const lastDotIndex = fileName.lastIndexOf('.');
+        const hasTypicalExtension = lastDotIndex !== -1 && 
+            (fileName.length - lastDotIndex - 1) <= 4 && // extension is 4 chars or less
+            lastDotIndex > 0; // not starting with a dot (hidden file)
+        
+        if (!hasTypicalExtension) {
+            // Check for other typical binary output directories that often contain executables
+            if (/\/(debug|release|target|dist|build)\//i.test(filePathOrName)) {
+                return true;
+            }
+        }
+        
+        return false;
     }
 
     // Function to convert a gitignore pattern to a regular expression string.
@@ -555,14 +595,20 @@ Create at {{DATE}}
         // Store the original pattern before escaping
         const originalPattern = pattern;
         
-        // Convert ? to [^/]
+        // Convert gitignore patterns using placeholders to avoid interference
+        // First, convert **/ and /** patterns to placeholders
+        regex = regex.replace(/\*\*\//g, '__DOUBLESTAR_SLASH__'); 
+        regex = regex.replace(/\/\*\*/g, '__SLASH_DOUBLESTAR__'); 
+        
+        // Then convert ? to [^/]
         regex = regex.replace(/\?/g, '[^/]');
-        // Convert **/
-        regex = regex.replace(/\*\*\//g, '(?:.*/)?'); // Equivalent to (zero or more dirs)/
-        // Convert /**
-        regex = regex.replace(/\/\*\*/g, '(?:/.*)?'); // Equivalent to /(zero or more things)
-        // Convert *
+        
+        // Convert remaining single * (not part of ** patterns)
         regex = regex.replace(/\*/g, '[^/]*');
+        
+        // Replace placeholders with final patterns
+        regex = regex.replace(/__DOUBLESTAR_SLASH__/g, '(?:.*/)?'); // Equivalent to (zero or more dirs)/
+        regex = regex.replace(/__SLASH_DOUBLESTAR__/g, '(?:/.*)?'); // Equivalent to /(zero or more things)
 
         // Handle anchoring and directory matching
         if (regex.startsWith('/')) { // Anchored to root
