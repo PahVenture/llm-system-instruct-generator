@@ -595,14 +595,20 @@ Create at {{DATE}}
         // Store the original pattern before escaping
         const originalPattern = pattern;
         
-        // Convert ? to [^/]
+        // Convert gitignore patterns using placeholders to avoid interference
+        // First, convert **/ and /** patterns to placeholders
+        regex = regex.replace(/\*\*\//g, '__DOUBLESTAR_SLASH__'); 
+        regex = regex.replace(/\/\*\*/g, '__SLASH_DOUBLESTAR__'); 
+        
+        // Then convert ? to [^/]
         regex = regex.replace(/\?/g, '[^/]');
-        // Convert **/
-        regex = regex.replace(/\*\*\//g, '(?:.*/)?'); // Equivalent to (zero or more dirs)/
-        // Convert /**
-        regex = regex.replace(/\/\*\*/g, '(?:/.*)?'); // Equivalent to /(zero or more things)
-        // Convert *
+        
+        // Convert remaining single * (not part of ** patterns)
         regex = regex.replace(/\*/g, '[^/]*');
+        
+        // Replace placeholders with final patterns
+        regex = regex.replace(/__DOUBLESTAR_SLASH__/g, '(?:.*/)?'); // Equivalent to (zero or more dirs)/
+        regex = regex.replace(/__SLASH_DOUBLESTAR__/g, '(?:/.*)?'); // Equivalent to /(zero or more things)
 
         // Handle anchoring and directory matching
         if (regex.startsWith('/')) { // Anchored to root
