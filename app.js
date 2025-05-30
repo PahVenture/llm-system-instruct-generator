@@ -457,10 +457,16 @@ Create at {{DATE}}
     if (refreshFilesButtonElement) {
         refreshFilesButtonElement.addEventListener('click', async () => {
             if (selectedFolderHandle) {
-                statusElement.textContent = 'Refreshing file list...';
-                await populateFileExplorer(selectedFolderHandle);
-                statusElement.textContent = `Folder "${currentFolderId}" files refreshed.`;
-                showNotification('File list refreshed successfully.', true);
+                try {
+                    statusElement.textContent = 'Refreshing file list...';
+                    await populateFileExplorer(selectedFolderHandle);
+                    statusElement.textContent = `Folder "${currentFolderId}" files refreshed.`;
+                    showNotification('File list refreshed successfully.', true);
+                } catch (error) {
+                    console.error('Error refreshing file list:', error);
+                    statusElement.textContent = 'Error refreshing file list.';
+                    showNotification('Failed to refresh file list: ' + error.message, false);
+                }
             }
         });
     }
