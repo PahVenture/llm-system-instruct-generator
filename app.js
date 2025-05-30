@@ -19,6 +19,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const fileExplorerSectionElement = document.getElementById('fileExplorerSection');
     const fileExplorerTreeElement = document.getElementById('fileExplorerTree');
     const closeFolderButtonElement = document.getElementById('closeFolderButton');
+    const refreshFilesButtonElement = document.getElementById('refreshFilesButton');
 
     // Fallback template content (in case file loading fails)
     const FALLBACK_MERGE_TEMPLATE = `{{SYSTEM_PROMPT}}
@@ -450,6 +451,18 @@ Create at {{DATE}}
     // Step 2: Updated DOMContentLoaded
     if (openFolderButtonElement) {
         openFolderButtonElement.addEventListener('click', () => requestFolderAccess());
+    }
+
+    // Refresh files button event listener
+    if (refreshFilesButtonElement) {
+        refreshFilesButtonElement.addEventListener('click', async () => {
+            if (selectedFolderHandle) {
+                statusElement.textContent = 'Refreshing file list...';
+                await populateFileExplorer(selectedFolderHandle);
+                statusElement.textContent = `Folder "${currentFolderId}" files refreshed.`;
+                showNotification('File list refreshed successfully.', true);
+            }
+        });
     }
 
     if (hasFileSystemAccessAPI) {

@@ -19,7 +19,10 @@
         </div>
 
         <div id="fileExplorerSection" class="mb-6 hidden">
-            <h2 class="text-xl font-semibold mb-2 text-gray-700">Select Files to Merge:</h2>
+            <div class="flex justify-between items-center mb-2">
+                <h2 class="text-xl font-semibold text-gray-700">Select Files to Merge:</h2>
+                <button id="refreshFilesButton" class="bg-green-500 hover:bg-green-700 text-white font-bold py-1 px-3 rounded text-sm">🔄 Refresh Files</button>
+            </div>
             <div id="fileExplorerTree" class="border border-gray-300 p-3 rounded-md h-64 overflow-y-auto bg-gray-50">
                 <!-- File tree will be populated here -->
             </div>
