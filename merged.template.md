@@ -1,5 +1,3 @@
 {{SYSTEM_PROMPT}}
 
-<|CODE|>
 {{ALL_FILES}}
-<|CODE|>
