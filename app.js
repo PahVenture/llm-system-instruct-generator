@@ -159,6 +159,43 @@ Create at {{DATE}}
         typeof window.showDirectoryPicker === 'function'
     );
 
+    // URL utility functions for folder state management
+    function getFolderIdFromURL() {
+        const urlParams = new URLSearchParams(window.location.search);
+        return urlParams.get('folderId');
+    }
+
+    function setFolderIdInURL(folderId) {
+        if (!folderId) {
+            // Remove folderId parameter if null/empty
+            const url = new URL(window.location);
+            url.searchParams.delete('folderId');
+            window.history.replaceState({}, '', url);
+            return;
+        }
+        
+        const url = new URL(window.location);
+        url.searchParams.set('folderId', folderId);
+        window.history.replaceState({}, '', url);
+    }
+
+    // Namespaced localStorage utility functions
+    function setFolderItem(folderId, key, value) {
+        if (!folderId) return;
+        localStorage.setItem(`${folderId}:${key}`, JSON.stringify(value));
+    }
+
+    function getFolderItem(folderId, key) {
+        if (!folderId) return null;
+        const item = localStorage.getItem(`${folderId}:${key}`);
+        return item ? JSON.parse(item) : null;
+    }
+
+    function removeFolderItem(folderId, key) {
+        if (!folderId) return;
+        localStorage.removeItem(`${folderId}:${key}`);
+    }
+
     // Step 2: New requestFolderAccess function
     async function requestFolderAccess(options = { mode: 'readwrite' }) {
         try {
@@ -167,7 +204,14 @@ Create at {{DATE}}
                 selectedFolderHandle = handle;
                 currentFolderId = handle.name;
                 await storeDirectoryHandle(currentFolderId, handle);
+                
+                // Update URL with folderId
+                setFolderIdInURL(currentFolderId);
+                
+                // Store in namespaced localStorage and legacy location for compatibility
+                setFolderItem(currentFolderId, 'lastOpenedAt', Date.now());
                 localStorage.setItem('lastOpenedFolderId', currentFolderId);
+                
                 if (currentFolderPathElement) currentFolderPathElement.textContent = `Selected Folder: ${handle.name}`;
                 if (statusElement) statusElement.textContent = `Folder "${handle.name}" opened. Displaying files...`;
                 showNotification(`Folder "${handle.name}" access granted.`, true);
@@ -190,9 +234,12 @@ Create at {{DATE}}
         }
     }
     
-    // Step 2: On Page Load - attempt to restore last opened folder
+    // Step 2: On Page Load - attempt to restore folder from URL or last opened folder
     async function tryRestoreLastFolder() {
-        const lastFolderId = localStorage.getItem('lastOpenedFolderId');
+        // Check URL first for folderId parameter
+        const urlFolderId = getFolderIdFromURL();
+        const lastFolderId = urlFolderId || localStorage.getItem('lastOpenedFolderId');
+        
         if (lastFolderId) {
             if(statusElement) statusElement.textContent = `Attempting to reopen folder: ${lastFolderId}...`;
             const handle = await getDirectoryHandle(lastFolderId);
@@ -212,6 +259,12 @@ Create at {{DATE}}
                 if (permissionGranted) {
                     selectedFolderHandle = handle;
                     currentFolderId = handle.name;
+                    
+                    // Ensure URL and localStorage are in sync
+                    setFolderIdInURL(currentFolderId);
+                    setFolderItem(currentFolderId, 'lastOpenedAt', Date.now());
+                    localStorage.setItem('lastOpenedFolderId', currentFolderId);
+                    
                     if(currentFolderPathElement) currentFolderPathElement.textContent = `Selected Folder: ${handle.name}`;
                     if(fileExplorerSectionElement) fileExplorerSectionElement.classList.remove('hidden');
                     await populateFileExplorer(handle);
@@ -223,11 +276,13 @@ Create at {{DATE}}
                     showNotification(`Permission denied for folder "${lastFolderId}".`, false);
                     await removeDirectoryHandle(lastFolderId); 
                     localStorage.removeItem('lastOpenedFolderId');
+                    setFolderIdInURL(null); // Clear URL parameter
                     resetFolderState();
                 }
             } else {
                  if(statusElement) statusElement.textContent = 'No previously opened folder found or access lost. Please open a folder.';
                  localStorage.removeItem('lastOpenedFolderId'); 
+                 setFolderIdInURL(null); // Clear URL parameter
                  resetFolderState();
             }
         } else {
@@ -735,7 +790,8 @@ Create at {{DATE}}
             }
             await loadIgnoreFiles(directoryHandle);
 
-            const hadPreviouslyStoredSelections = localStorage.getItem(`selectedFiles_${currentFolderId}`) !== null;
+            const hadPreviouslyStoredSelections = getFolderItem(currentFolderId, 'selectedFiles') !== null || 
+                                                 localStorage.getItem(`selectedFiles_${currentFolderId}`) !== null;
             loadSelectionsFromLocalStorage(currentFolderId); // Clears selectedFilesForMerge then loads if exists
 
             const applyDefaults = !hadPreviouslyStoredSelections;
@@ -907,7 +963,9 @@ Create at {{DATE}}
 
     function saveSelectionsToLocalStorage(folderId, selections) {
         if (!folderId) return;
+        // Store in both legacy format (for compatibility) and new namespaced format
         localStorage.setItem(`selectedFiles_${folderId}`, JSON.stringify(Array.from(selections)));
+        setFolderItem(folderId, 'selectedFiles', Array.from(selections));
     }
 
     function loadSelectionsFromLocalStorage(folderId) {
@@ -916,22 +974,25 @@ Create at {{DATE}}
             return; // currentFolderId is not set, selectedFilesForMerge remains empty.
         }
         
-        const savedSelectionJSON = localStorage.getItem(`selectedFiles_${folderId}`);
-        if (savedSelectionJSON) {
-            try {
-                const parsedArr = JSON.parse(savedSelectionJSON);
-                if (Array.isArray(parsedArr)) {
-                    selectedFilesForMerge = new Set(parsedArr); // Assign the new Set
-                } else {
-                    console.error(`Stored selection for ${folderId} is not an array:`, parsedArr);
-                    // selectedFilesForMerge remains empty due to the initial clear().
+        // Try new namespaced format first, then fall back to legacy format
+        let savedSelections = getFolderItem(folderId, 'selectedFiles');
+        if (!savedSelections) {
+            const savedSelectionJSON = localStorage.getItem(`selectedFiles_${folderId}`);
+            if (savedSelectionJSON) {
+                try {
+                    savedSelections = JSON.parse(savedSelectionJSON);
+                } catch (e) {
+                    console.error(`Error parsing legacy stored selections for ${folderId}:`, e);
+                    return;
                 }
-            } catch (e) {
-                console.error(`Error parsing stored selections for ${folderId}:`, e);
-                // selectedFilesForMerge remains empty due to the initial clear().
             }
         }
-        // If savedSelectionJSON is null, selectedFilesForMerge remains empty from the initial clear().
+        
+        if (savedSelections && Array.isArray(savedSelections)) {
+            selectedFilesForMerge = new Set(savedSelections); // Assign the new Set
+        } else if (savedSelections) {
+            console.error(`Stored selection for ${folderId} is not an array:`, savedSelections);
+        }
     }
 
     function updateProcessButtonState() {
@@ -1082,12 +1143,18 @@ Create at {{DATE}}
             // Option to remove stored handle: If removed, user must re-select from picker always.
             // removeDirectoryHandle(currentFolderId).catch(err => console.warn("Could not remove stored handle on close:", err));
             
-            // Clear selections for this specific folder ID
+            // Clear selections for this specific folder ID (legacy and namespaced)
             localStorage.removeItem(`selectedFiles_${currentFolderId}`);
+            removeFolderItem(currentFolderId, 'selectedFiles');
+            removeFolderItem(currentFolderId, 'lastOpenedAt');
             
             // Clear the overall last opened folder ID, so it doesn't try to reopen this one.
             localStorage.removeItem('lastOpenedFolderId'); 
         }
+        
+        // Clear URL parameter
+        setFolderIdInURL(null);
+        
         selectedFolderHandle = null;
         currentFolderId = '';
         selectedFilesForMerge.clear();
@@ -1113,6 +1180,14 @@ Create at {{DATE}}
         showNotification('Browser compatibility issue: Direct folder access not supported.', false);
         if(openFolderButtonElement) openFolderButtonElement.disabled = true;
     }
+
+    // Handle URL changes (back/forward navigation)
+    window.addEventListener('popstate', () => {
+        if (hasFileSystemAccessAPI) {
+            tryRestoreLastFolder();
+        }
+    });
+
     updateProcessButtonState(); // Initial call to set button state
     // Any other initial setup from original DOMContentLoaded
 
